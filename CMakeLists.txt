@@ -28,12 +28,21 @@ include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_i
 project(Projeto C CXX ASM) 
 pico_sdk_init()
 
-include_directories(${CMAKE_SOURCE_DIR}/lib)
+include_directories(
+    ${CMAKE_SOURCE_DIR}/lib
+    ${PICO_SDK_PATH}/lib/lwip/src/include/lwip
+    )
 
 add_executable(${PROJECT_NAME}  
         Projeto.c 
         lib/ssd1306.c # Biblioteca para o display OLED
         )
+
+target_sources(${PROJECT_NAME} PRIVATE
+    ${PICO_SDK_PATH}/lib/lwip/src/apps/http/httpd.c
+    ${PICO_SDK_PATH}/lib/lwip/src/apps/http/fs.c
+)
+
 target_compile_definitions(${PROJECT_NAME} PRIVATE 
         PICO_PRINTF_SUPPORT_FLOAT=1 
         PICO_STDIO_ENABLE_PRINTF=1
@@ -44,6 +53,7 @@ target_link_libraries(${PROJECT_NAME}
         hardware_adc
         FreeRTOS-Kernel 
         FreeRTOS-Kernel-Heap4
+        pico_cyw43_arch_lwip_threadsafe_background
         )
         
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
