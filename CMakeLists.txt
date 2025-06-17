@@ -22,8 +22,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(PICO_BOARD pico_w CACHE STRING "Board type")
 include(pico_sdk_import.cmake)
 
+set(FREERTOS_KERNEL_PATH "C:/FreeRTOS-Kernel")
+include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
+
 project(Projeto C CXX ASM) 
 pico_sdk_init()
+
+include_directories(${CMAKE_SOURCE_DIR}/lib)
+
 add_executable(${PROJECT_NAME}  
         Projeto.c 
         lib/ssd1306.c # Biblioteca para o display OLED
@@ -36,7 +42,10 @@ target_link_libraries(${PROJECT_NAME}
         pico_stdlib 
         hardware_i2c
         hardware_adc
+        FreeRTOS-Kernel 
+        FreeRTOS-Kernel-Heap4
         )
+        
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
 
