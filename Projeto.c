@@ -13,8 +13,8 @@
 #include "lwip/tcp.h"            // Lightweight IP stack - fornece funções e estruturas para trabalhar com o protocolo TCP
 #include "lwip/netif.h"          // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
 // Credenciais WIFI - Tome cuidado se publicar no github!
-#define WIFI_SSID "SSID"
-#define WIFI_PASSWORD "PASSWORD"
+#define WIFI_SSID "TEMPLATE"
+#define WIFI_PASSWORD "TEMPLATE"
 
 #define LED_PIN CYW43_WL_GPIO_LED_PIN 
 #define I2C_PORT i2c1
@@ -22,6 +22,7 @@
 #define I2C_SCL 15
 #define endereco 0x3C
 #define ADC_PIN 28  // GPIO para a leitura
+#define CONTROL_PIN 9 // GPIO para o controle da bomba
 
 //Trecho para modo BOOTSEL com botão B
 #include "pico/bootrom.h"
@@ -32,7 +33,8 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 }
 //
 
-volatile float adc_reading = 0;
+volatile float adc_reading = 0; //variável que armazena a leitura do potenciômetro
+volatile int pump_state = 0; // variável que armazena o estado do pino de controle
 ssd1306_t ssd; // Inicia a estrutura do display
 
 // WIFI
@@ -74,8 +76,9 @@ int main()
   gpio_set_dir(12, GPIO_OUT);
   gpio_init(13);
   gpio_set_dir(13, GPIO_OUT);
-
-
+  gpio_init(CONTROL_PIN);
+  gpio_set_dir(CONTROL_PIN, GPIO_OUT);
+  //gpio_pull_up(CONTROL_PIN);
 
   xTaskCreate(vADCReadTask, "ADC Read Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   xTaskCreate(vDisplayTask, "Display Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
@@ -101,6 +104,14 @@ void vADCReadTask(){
     float media = soma / 16.0f;
     adc_reading = (media * 3.3) / 4095;
     printf("Tensão: %.2f\n", adc_reading);
+    if (adc_reading < 2){
+      gpio_put(CONTROL_PIN, 1);
+      printf("MENOR DO QUE 2: %d\n", gpio_get(CONTROL_PIN));
+    } else {
+      gpio_put(CONTROL_PIN, 0);
+      printf("MAIOR DO QUE 2: %d\n", gpio_get(CONTROL_PIN));
+    }
+    pump_state = gpio_get(CONTROL_PIN);
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -244,135 +255,189 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 
     printf("Request: %s\n", request);
 
-    // Tratamento de request - Controle dos LEDs
+    // Tratamento de request - Controle da página e painel
     
-    user_request(&request);
+    if (strstr(request, "GET /level") != NULL) { // Responde a requisição de tensão medida
+        char leitura[32];
+        snprintf(leitura, sizeof(leitura), "%.2f", adc_reading);
 
-    // Cria a resposta HTML
-    char html[3072];
-
-    // Instruções html do webserver
-    snprintf(html, sizeof(html), // Formatar uma string e armazená-la em um buffer de caracteres
+        char resposta[128];
+        snprintf(resposta, sizeof(resposta),
             "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/html\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: %d\r\n"
             "Connection: close\r\n"
             "\r\n"
-            "<!DOCTYPE html>"
-            "<html>"
-                "<head>"
-                    "<title>🏠Painel</title>"
-                    "<meta charset=\"UTF-8\">"
-                    "<style>"
-                        "body{"
-                            "background:#f8f9fa;"
-                            "font-family:Arial;"
-                            "margin:0;"
-                            "min-height:100vh;"
-                            "display:flex;"
-                            "flex-direction:column;"
-                            "align-items:center;}"
-                        ".container{"
-                            "max-width:800px;"
-                            "margin:0 auto;"
-                            "padding:20px;"
-                            "display:flex;"
-                            "flex-direction: row;}"
-                        ".section{"
-                            "display:flex;"
-                            "flex-direction:column;"
-                            "background:#f6f6f6;"
-                            "border-radius:10px;"
-                            "padding: 10px;"
-                            "box-shadow:0 4px 6px rgba(0,0,0,0.1);"
-                            "}"
-                        ".card{background:#fff;"
-                            "border-radius:10px;"
-                            "box-shadow:0 4px 6px rgba(0,0,0,0.1);"
-                            "padding:20px;"
-                            "margin-bottom:20px;}"
-                        ".content{display:flex;"
-                            "flex-direction:row;"
-                            "flex-wrap:wrap;}"
-                        ".btn{"
-                            "display:inline-flex;"
-                            "align-items:center;"
-                            "justify-content:center;"
-                            "background:#6c757d;"
-                            "color:white;"
-                            "border:none;"
-                            "border-radius:5px;"
-                            "padding:12px 24px;"
-                            "font-size:18px;"
-                            "margin:8px;"
-                            "cursor:pointer;"
-                            "transition:all 0.3s;}"
-                        ".btn:hover{"
-                            "opacity:0.8;"
-                            "transform:translateY(-2px);}"
-                        ".btn-p{"
-                            "background:#0d6efd;}"
-                        ".btn-d{"
-                            "background:#dc3545;}"
-                        ".btn-s{"
-                            "background:#198754;}"
-                        ".btn-w{"
-                            "background:#ffc107;color:#000;}"
-                        ".form-group{"
-                            "margin-bottom:1rem;"
-                            "display:flex;"
-                            "align-items:center;}"
-                        "select{"
-                            "padding:8px;"
-                            "border-radius:4px;"
-                            "border:1px solid #ced4da;"
-                            "margin-left:10px;}"
-                        "h1{"
-                            "color:#212529;"
-                            "margin-bottom:1.5rem;}"
-                        ".sensor{"
-                            "font-size:12px;"
-                            "color:#495057;"
-                            "margin-top:1rem;"
-                            "flex:1 1 50%%}"
-                        ".text{"
-                            "display:flex;"
-                            "flex:1 1 100%%;}"
-                    "</style>"
-                    "<script>"
-                    "</script>"
-                "</head>"
-                "<body>"
-                    "<h1>🏠 Painel</h1>"
-                    "<div class=\"container\">"
-                        "<div class=\"office section\">"
-                            "<h4>Projeto</h4>"
-                            "<div class=\"card\">"
-                                "<h4>💡 Luz</h4>"
-                                "<div class=\"content\">"
-                                    "<form action=\"./led_h\" method=\"GET\" class=\"form-group\">"
-                                        "<button type=\"submit\" class=\"btn btn-p\">Alto</button>"
-                                    "</form>"
-                                    "<form action=\"./led_m\" method=\"GET\" class=\"form-group\">"
-                                        "<button type=\"submit\" class=\"btn btn-p\">Médio</button>"
-                                    "</form>"
-                                    "<form action=\"./led_l\" method=\"GET\" class=\"form-group\">"
-                                        "<button type=\"submit\" class=\"btn btn-p\">Baixo</button>"
-                                    "</form>"
-                                    "<form action=\"./led_o\" method=\"GET\" class=\"form-group\">"
-                                        "<button type=\"submit\" class=\"btn btn-d\">Off</button>"
-                                    "</form>"
+            "%s",
+            strlen(leitura), leitura);
+
+        tcp_write(tpcb, resposta, strlen(resposta), TCP_WRITE_FLAG_COPY);
+        tcp_output(tpcb);
+    } else if (strstr(request, "GET /state")) { // Retorna a requisição do pino de controle
+        char leitura[32];
+        if (pump_state == 1)
+          snprintf(leitura, sizeof(leitura), "ligada!");
+        else
+          snprintf(leitura, sizeof(leitura), "desligada!");
+
+        char resposta[128];
+        snprintf(resposta, sizeof(resposta),
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: %d\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "%s",
+            strlen(leitura), leitura);
+
+        tcp_write(tpcb, resposta, strlen(resposta), TCP_WRITE_FLAG_COPY);
+        tcp_output(tpcb);
+    } else { //retorna a página
+        user_request(&request);
+
+        // Cria a resposta HTML
+        char html[3072];
+
+
+        char state[11];
+        if (pump_state == 1)
+          snprintf(state, sizeof(state), "ligada!");
+        else
+          snprintf(state, sizeof(state), "desligada!");
+
+        // Instruções html do webserver
+        snprintf(html, sizeof(html), // Formatar uma string e armazená-la em um buffer de caracteres
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "<!DOCTYPE html>"
+                "<html>"
+                    "<head>"
+                        "<title>🏠Painel</title>"
+                        "<meta charset=\"UTF-8\">"
+                        "<style>"
+                            "body{"
+                                "background:#f8f9fa;"
+                                "font-family:Arial;"
+                                "margin:0;"
+                                "min-height:100vh;"
+                                "display:flex;"
+                                "flex-direction:column;"
+                                "align-items:center;}"
+                            ".container{"
+                                "max-width:800px;"
+                                "margin:0 auto;"
+                                "padding:20px;"
+                                "display:flex;"
+                                "flex-direction: row;}"
+                            ".section{"
+                                "display:flex;"
+                                "flex-direction:column;"
+                                "background:#f6f6f6;"
+                                "border-radius:10px;"
+                                "padding: 10px;"
+                                "box-shadow:0 4px 6px rgba(0,0,0,0.1);"
+                                "}"
+                            ".card{background:#fff;"
+                                "border-radius:10px;"
+                                "box-shadow:0 4px 6px rgba(0,0,0,0.1);"
+                                "padding:20px;"
+                                "margin-bottom:20px;}"
+                            ".content{display:flex;"
+                                "flex-direction:row;"
+                                "flex-wrap:wrap;}"
+                            ".btn{"
+                                "display:inline-flex;"
+                                "align-items:center;"
+                                "justify-content:center;"
+                                "background:#6c757d;"
+                                "color:white;"
+                                "border:none;"
+                                "border-radius:5px;"
+                                "padding:12px 24px;"
+                                "font-size:18px;"
+                                "margin:8px;"
+                                "cursor:pointer;"
+                                "transition:all 0.3s;}"
+                            ".btn:hover{"
+                                "opacity:0.8;"
+                                "transform:translateY(-2px);}"
+                            ".btn-p{"
+                                "background:#0d6efd;}"
+                            ".btn-d{"
+                                "background:#dc3545;}"
+                            ".btn-s{"
+                                "background:#198754;}"
+                            ".btn-w{"
+                                "background:#ffc107;color:#000;}"
+                            ".form-group{"
+                                "margin-bottom:1rem;"
+                                "display:flex;"
+                                "align-items:center;}"
+                            "select{"
+                                "padding:8px;"
+                                "border-radius:4px;"
+                                "border:1px solid #ced4da;"
+                                "margin-left:10px;}"
+                            "h1{"
+                                "color:#212529;"
+                                "margin-bottom:1.5rem;}"
+                            ".sensor{"
+                                "font-size:12px;"
+                                "color:#495057;"
+                                "margin-top:1rem;"
+                                "flex:1 1 50%%}"
+                            ".text{"
+                                "display:flex;"
+                                "flex:1 1 100%%;}"
+                        "</style>"
+                        "<script>"
+                          "setInterval(() => {"
+                              "fetch('/level')"
+                                  ".then(res=> res.text())"
+                                  ".then(data=>{"
+                                      "document.getElementById(\"level\").innerText=data;"
+                                  "});"
+                          "},1000);" // atualiza a cada 1 segundo
+                        "</script>"
+                        "<script>"
+                          "setInterval(() => {"
+                              "fetch('/state')"
+                                  ".then(res=> res.text())"
+                                  ".then(data=>{"
+                                      "document.getElementById(\"state\").innerText=data;"
+                                  "});"
+                          "},1000);" // atualiza a cada 1 segundo
+                        "</script>"
+                    "</head>"
+                    "<body>"
+                        "<h1>🏠 Painel</h1>"
+                        "<div class=\"container\">"
+                            "<div class=\"office section\">"
+                                "<h4>Projeto</h4>"
+                                "<div class=\"card\">"
+                                    "<h4>💧Nível de água</h4>"
+                                    "<div class=\"content\">"
+                                      "<h4>Nível medido: <span id=\"level\">%.2f</span> V</h4>"
+                                    "</div>"
+                                "</div>"
+                                "<div class=\"card\">"
+                                    "<h4>🚿Estado da bomba</h4>"
+                                    "<div class=\"content\">"
+                                      "<span id=\"state\">%s</span>"
+                                    "</div>"
                                 "</div>"
                             "</div>"
                         "</div>"
-                    "</div>"
-                "</body>"
-            "</html>");
+                    "</body>"
+                "</html>", adc_reading, state);
 
-    // Escreve dados para envio (mas não os envia imediatamente).
-    tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
+        tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
 
-    // Envia a mensagem
-    tcp_output(tpcb);
+        // Envia a mensagem
+        tcp_output(tpcb);
+    }
 
     //libera memória alocada dinamicamente
     free(request);
