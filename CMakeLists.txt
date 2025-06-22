@@ -22,7 +22,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(PICO_BOARD pico_w CACHE STRING "Board type")
 include(pico_sdk_import.cmake)
 
-set(FREERTOS_KERNEL_PATH "D:/FreeRTOS-Kernel")
+set(FREERTOS_KERNEL_PATH "C:/FreeRTOS-Kernel")
 include(${FREERTOS_KERNEL_PATH}/portable/ThirdParty/GCC/RP2040/FreeRTOS_Kernel_import.cmake)
 
 project(Projeto C CXX ASM) 
@@ -55,7 +55,8 @@ target_link_libraries(${PROJECT_NAME}
         FreeRTOS-Kernel-Heap4
         pico_cyw43_arch_lwip_threadsafe_background
         )
-        
+
+pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/lib/pioconfig.pio)
 pico_enable_stdio_usb(${PROJECT_NAME} 1)
 pico_enable_stdio_uart(${PROJECT_NAME} 0)
 
