@@ -35,6 +35,7 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 
 volatile float adc_reading = 0; //variável que armazena a leitura do potenciômetro
 volatile int pump_state = 0; // variável que armazena o estado do pino de controle
+bool wifi_connected = false; // Variável para verificar se o Wi-Fi está conectado
 ssd1306_t ssd; // Inicia a estrutura do display
 
 // WIFI
@@ -134,20 +135,52 @@ void vDisplayTask(){
   bool cor = true;
 
   while(true){
-    sprintf(str, "%1.2f", adc_reading);  // Converte o float em string
-      
-    // Atualiza o conteúdo do display com animações
+    sprintf(str, "lvl: %.0f", (100*adc_reading/3.3));  // Converte o float em string
+    
     ssd1306_fill(&ssd, !cor); // Limpa o display
     ssd1306_rect(&ssd, 3, 3, 122, 60, cor, !cor); // Desenha um retângulo
-    ssd1306_line(&ssd, 3, 25, 123, 25, cor); // Desenha uma linha
-    ssd1306_line(&ssd, 3, 37, 123, 37, cor); // Desenha uma linha   
-    ssd1306_draw_string(&ssd, "CEPEDI   TIC37", 8, 6); // Desenha uma string
-    ssd1306_draw_string(&ssd, "EMBARCATECH", 20, 16); // Desenha uma string
-    ssd1306_draw_string(&ssd, "Projeto", 30, 28); // Desenha uma string
-    ssd1306_draw_string(&ssd, "Tensao(V)", 30, 41); // Desenha uma string    
-    ssd1306_draw_string(&ssd, str, 52, 52); // Desenha uma string   
+
+    // Entra nesse if quando o wifi for conectado e desenha o símbolo de Wi-Fi
+    if(wifi_connected) {
+      ssd1306_line(&ssd, 9, 5, 13, 5, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 8, 6, 8, 6, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 7, 7, 7, 7, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 15, 7, 15, 7, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 14, 6, 14, 6, cor); // Desenha uma linha
+
+      ssd1306_line(&ssd, 10, 7, 12, 7, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 9, 8, 9, 8, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 13, 8, 13, 8, cor); // Desenha uma linha
+      ssd1306_line(&ssd, 11, 9, 11, 9, cor); // Desenha uma linha
+      ssd1306_draw_string(&ssd, "on", 17, 4); // Desenha uma string
+    }
+
+    // Desenha na tela o estado atual da bomba
+    ssd1306_draw_string(&ssd, pump_state?"bomba: on ":"bomba: off", 44, 4); // Desenha uma string
+
+    // Desenha os gráficos do nível da agua
+    ssd1306_line(&ssd, 8, 55, 50, 55, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 8, 55, 8, 20, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 50, 55, 50, 20, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 10, 25, 12, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 14, 25, 16, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 18, 25, 20, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 22, 25, 24, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 26, 25, 28, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 30, 25, 32, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 34, 25, 36, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 38, 25, 40, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 42, 25, 44, 25, cor); // Desenha uma linha
+    ssd1306_line(&ssd, 46, 25, 48, 25, cor); // Desenha uma linha
+
+    // Lógica da animação do nível da agua basedo no ADC
+    ssd1306_rect(&ssd, 26+(30-(30*adc_reading/3.3)), 9, 41, 30-(30-(30*adc_reading/3.3)), cor, cor); // Desenha um retângulo
+    ssd1306_draw_string(&ssd, "max: 80%", 54, 20); // Desenha uma string
+    ssd1306_draw_string(&ssd, "min: 20%", 54, 49); // Desenha uma string
+    ssd1306_draw_string(&ssd, str, 54, 35); // Desenha uma string
+
     ssd1306_send_data(&ssd); // Atualiza o display
-    vTaskDelay(pdMS_TO_TICKS(70));
+    sleep_ms(70);
   }
 }
 
@@ -176,6 +209,8 @@ void vConnectTask(){
   }
 
   printf("Conectado ao Wi-Fi\n");
+
+  wifi_connected = true; // Define a variável como verdadeira quando conectado
 
   // Caso seja a interface de rede padrão - imprimir o IP do dispositivo.
   if (netif_default)
