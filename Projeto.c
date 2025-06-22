@@ -64,7 +64,8 @@ enum wifi_state { //estrutura que representa o estado da conexão wi-fi
 
 volatile float adc_reading = 0; //variável que armazena a leitura do potenciômetro
 volatile int pump_state = 0; // variável que armazena o estado do pino de controle
-volatile int reservoir_level = 10; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile float reservoir_max = 1; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile float reservoir_min = 10; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
 volatile uint8_t wifi_connected = WIFI_CONNECTING; // Variável para verificar se o Wi-Fi está conectado
 ssd1306_t ssd; // Inicia a estrutura do display
 
@@ -395,12 +396,16 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
       char *body = strstr(request, "\r\n\r\n");
       if (body) {
           body += 4; // pula os caracteres de nova linha
-          float value = atof(body);
+          float max, min;
+          int n = sscanf(body, "max: %f\nmin: %f", &max, &min);
+          if (n == 2){
+            reservoir_max = max;
+            reservoir_min = min;
+            printf("reservoir_max: %.2f\n", reservoir_max);
+            printf("reservoir_min: %.2f\n", reservoir_min);
+          }
           char response_body[64];
-          snprintf(response_body, sizeof(response_body), "Recebido: %.2f", value);
-          printf("\n\nPOST");
-          printf(response_body);
-          reservoir_level = value;
+          snprintf(response_body, sizeof(response_body), "Max: %.2f; Min: %.2f", max, min);
 
           char response[128];
           snprintf(response, sizeof(response),
@@ -551,7 +556,10 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                                     "<h4>🎚️ Alterar nível</h4>"
                                     "<div class=\"content\">"
                                         "<form id=\"level-mod\">"
-                                          "<input type=\"text\" id=\"level-input\" placeholder=\"2\" required />"
+                                          "<label for=\"level-min\">Min:</label>"
+                                          "<input type=\"text\" id=\"level-min\" placeholder=\"6\" required />"
+                                          "<label for=\"level-max\">Max:</label>"
+                                          "<input type=\"text\" id=\"level-max\" placeholder=\"10\" required />"
                                           "<button id=\"send-btn\" type=\"button\" class=\"btn btn-p\">Enviar</button>"
                                           "<div id=\"answer\"></div>"
                                         "</form>"
@@ -561,18 +569,19 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                         "</div>"
                     "</body>"
                     "<script>"
-                      "document.getElementById(\"send-btn\").addEventListener(\"click\",(e)=>{"
+                      "document.getElementById(\"send-btn\").addEventListener(\"click\",(e)=>{" //cria a ação de envio POST para o botão
                         "e.preventDefault();"
-                        "const input=document.getElementById(\"level-input\").value;"
-                        "fetch(\"/form\",{"
+                        "const max=document.getElementById(\"level-max\").value;"
+                        "const min=document.getElementById(\"level-min\").value;"
+                        "fetch(\"/form\",{" 
                           "method: \"POST\","
                           "headers:{\"Content-Type\":\"text/plain\"},"
-                          "body:input"
+                          "body:\"max: \"+max+\"\\nmin: \"+min"
                         "})"
-                        ".then(res=>{res.text();})"
-                        ".then(data=>{"
+                        ".then(res=>res.text())"
+                        ".then(data=>"
                           "document.getElementById(\"answer\").innerText=\"enviado\""
-                        "})"
+                        ")"
                         ".catch(err=>{"
                           "console.error(\"Error! \"+err)"
                         "});"
@@ -644,14 +653,14 @@ void vMatrixTask(){
         },
         .index = 0,
         .main_color = {
-            .blue = 0.0, .green = 0.01, .red = 0.01
+            .blue = 0.01, .green = 0.05, .red = 0.00
         },
         .figure = {
-            0, 1, 0, 0, 0,
-            0, 0, 0, 1, 0,
+            0, 0, 0, 0, 0,
             0, 1, 1, 1, 0,
             0, 1, 0, 1, 0,
-            0, 1, 0, 1, 0
+            0, 1, 1, 1, 0,
+            0, 0, 0, 0, 0
         } 
     };
 
@@ -664,26 +673,29 @@ void vMatrixTask(){
             .blue = 0.0, .green = 0.00, .red = 0.01
         },
         .figure = {
-            0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0 
+            1, 0, 0, 0, 1,
+            0, 1, 0, 1, 0,
+            0, 0, 1, 0, 0,
+            0, 1, 0, 1, 0,
+            1, 0, 0, 0, 1 
         } 
     };
 
 
     while(true){
         //observa o estado atual e desenha na matriz de acordo
-        switch(reservoir_level){
-            case 4:
-                sketch1.main_color.red = 0.00;
-                draw_new(sketch1, 0, my_pio, 25);
-                break;
-            default:
-                sketch2.main_color.red = 0.00;
-                draw_new(sketch2, 0, my_pio, 25);
-                break;            
+        switch(wifi_connected){
+            case WIFI_CONNECTING:
+              sketch1.main_color.blue = 0.05;
+              draw_new(sketch1, 0, my_pio, 25);
+              break;
+            case WIFI_SUCCEEDED:
+              sketch1.main_color.blue = 0.01;
+              draw_new(sketch1, 0, my_pio, 25);
+              break;
+            case WIFI_FAILED:
+              draw_new(sketch2, 0, my_pio, 25);
+              break;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
