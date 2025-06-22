@@ -4,6 +4,9 @@
 #include "pico/cyw43_arch.h"     // Biblioteca para arquitetura Wi-Fi da Pico com CYW43  
 #include "hardware/adc.h"
 #include "hardware/i2c.h"
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
+#include "pioconfig.pio.h"
 #include "lib/ssd1306.h"
 #include "lib/font.h"
 #include "FreeRTOS.h"
@@ -33,9 +36,36 @@ void gpio_irq_handler(uint gpio, uint32_t events)
 }
 //
 
+typedef struct pio_refs{ //estrutura que representa a PIO
+    PIO address;
+    int state_machine;
+    int offset;
+    int pin;
+} pio;
+
+typedef struct rgb{ //estrutura que armazena as cores para a matriz
+    double red;
+    double green;
+    double blue;
+} rgb;
+
+typedef struct drawing { //estrutura que representa o desenho da matriz
+    double figure[25];
+    uint8_t index;
+    rgb main_color;
+    rgb background_color;
+} sketch;
+
+enum wifi_state { //estrutura que representa o estado da conexão wi-fi
+  WIFI_CONNECTING,
+  WIFI_SUCCEEDED,
+  WIFI_FAILED
+};
+
 volatile float adc_reading = 0; //variável que armazena a leitura do potenciômetro
 volatile int pump_state = 0; // variável que armazena o estado do pino de controle
-bool wifi_connected = false; // Variável para verificar se o Wi-Fi está conectado
+volatile int reservoir_level = 10; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile uint8_t wifi_connected = WIFI_CONNECTING; // Variável para verificar se o Wi-Fi está conectado
 ssd1306_t ssd; // Inicia a estrutura do display
 
 // WIFI
@@ -50,11 +80,17 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
 void user_request(char **request);
 // FIM WIFI
 
+//PIO
+void config_pio(pio *pio);
+void draw_new(sketch sketch, uint32_t led_cfg, pio pio, const uint8_t vector_size);
+uint32_t rgb_matrix(rgb color);
+//FIM PIO
 
 // TASKS
 void vADCReadTask();
 void vDisplayTask();
 void vConnectTask();
+void vMatrixTask();
 //FIM TASKS
 
 int main()
@@ -83,6 +119,7 @@ int main()
 
   xTaskCreate(vADCReadTask, "ADC Read Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   xTaskCreate(vDisplayTask, "Display Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vMatrixTask, "Matrix Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   xTaskCreate(vConnectTask, "Connect Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   vTaskStartScheduler();
 
@@ -104,13 +141,10 @@ void vADCReadTask(){
     }
     float media = soma / 16.0f;
     adc_reading = (media * 3.3) / 4095;
-    printf("Tensão: %.2f\n", adc_reading);
     if (adc_reading < 2){
       gpio_put(CONTROL_PIN, 1);
-      printf("MENOR DO QUE 2: %d\n", gpio_get(CONTROL_PIN));
     } else {
       gpio_put(CONTROL_PIN, 0);
-      printf("MAIOR DO QUE 2: %d\n", gpio_get(CONTROL_PIN));
     }
     pump_state = gpio_get(CONTROL_PIN);
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -141,18 +175,46 @@ void vDisplayTask(){
     ssd1306_rect(&ssd, 3, 3, 122, 60, cor, !cor); // Desenha um retângulo
 
     // Entra nesse if quando o wifi for conectado e desenha o símbolo de Wi-Fi
-    if(wifi_connected) {
-      ssd1306_line(&ssd, 9, 5, 13, 5, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 8, 6, 8, 6, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 7, 7, 7, 7, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 15, 7, 15, 7, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 14, 6, 14, 6, cor); // Desenha uma linha
+    switch(wifi_connected){
+      case WIFI_SUCCEEDED:
+        ssd1306_line(&ssd, 9, 5, 13, 5, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 8, 6, 8, 6, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 7, 7, 7, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 15, 7, 15, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 14, 6, 14, 6, cor); // Desenha uma linha
 
-      ssd1306_line(&ssd, 10, 7, 12, 7, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 9, 8, 9, 8, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 13, 8, 13, 8, cor); // Desenha uma linha
-      ssd1306_line(&ssd, 11, 9, 11, 9, cor); // Desenha uma linha
-      ssd1306_draw_string(&ssd, "on", 17, 4); // Desenha uma string
+        ssd1306_line(&ssd, 10, 7, 12, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 9, 8, 9, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 13, 8, 13, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 11, 9, 11, 9, cor); // Desenha uma linha
+        ssd1306_draw_string(&ssd, "on", 17, 4); // Desenha uma string
+        break;
+      case WIFI_FAILED:
+        ssd1306_line(&ssd, 9, 5, 13, 5, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 8, 6, 8, 6, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 7, 7, 7, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 15, 7, 15, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 14, 6, 14, 6, cor); // Desenha uma linha
+
+        ssd1306_line(&ssd, 10, 7, 12, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 9, 8, 9, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 13, 8, 13, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 11, 9, 11, 9, cor); // Desenha uma linha
+        ssd1306_draw_string(&ssd, "off", 17, 4); // Desenha uma string 
+        break;
+      case WIFI_CONNECTING:
+        ssd1306_line(&ssd, 9, 5, 13, 5, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 8, 6, 8, 6, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 7, 7, 7, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 15, 7, 15, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 14, 6, 14, 6, cor); // Desenha uma linha
+
+        ssd1306_line(&ssd, 10, 7, 12, 7, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 9, 8, 9, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 13, 8, 13, 8, cor); // Desenha uma linha
+        ssd1306_line(&ssd, 11, 9, 11, 9, cor); // Desenha uma linha
+        ssd1306_draw_string(&ssd, "try", 17, 4); // Desenha uma string 
+        break;
     }
 
     // Desenha na tela o estado atual da bomba
@@ -180,7 +242,7 @@ void vDisplayTask(){
     ssd1306_draw_string(&ssd, str, 54, 35); // Desenha uma string
 
     ssd1306_send_data(&ssd); // Atualiza o display
-    sleep_ms(70);
+    vTaskDelay(pdMS_TO_TICKS(70));
   }
 }
 
@@ -188,9 +250,8 @@ void vConnectTask(){
   while (cyw43_arch_init())
   {
     printf("Falha ao inicializar Wi-Fi\n");
-    gpio_put(13, true);
+    wifi_connected = WIFI_FAILED;
     sleep_ms(100);
-    gpio_put(13, false);
   }
 
   // GPIO do CI CYW43 em nível baixo
@@ -205,12 +266,13 @@ void vConnectTask(){
   while (cyw43_arch_wifi_connect_timeout_ms(WIFI_SSID, WIFI_PASSWORD, CYW43_AUTH_WPA2_AES_PSK, 20000))
   {
     printf("Falha ao conectar ao Wi-Fi\n");
+    wifi_connected = WIFI_FAILED;
     sleep_ms(100);
   }
 
   printf("Conectado ao Wi-Fi\n");
 
-  wifi_connected = true; // Define a variável como verdadeira quando conectado
+  wifi_connected = WIFI_SUCCEEDED;
 
   // Caso seja a interface de rede padrão - imprimir o IP do dispositivo.
   if (netif_default)
@@ -223,12 +285,14 @@ void vConnectTask(){
   if (!server)
   {
     printf("Falha ao criar servidor TCP\n");
+    wifi_connected = WIFI_FAILED;
   }
 
   //vincula um PCB (Protocol Control Block) TCP a um endereço IP e porta específicos.
   if (tcp_bind(server, IP_ADDR_ANY, 80) != ERR_OK)
   {
     printf("Falha ao associar servidor TCP à porta 80\n");
+    wifi_connected = WIFI_FAILED;
   }
 
   // Coloca um PCB (Protocol Control Block) TCP em modo de escuta, permitindo que ele aceite conexões de entrada.
@@ -293,40 +357,62 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     // Tratamento de request - Controle da página e painel
     
     if (strstr(request, "GET /level") != NULL) { // Responde a requisição de tensão medida
-        char leitura[32];
-        snprintf(leitura, sizeof(leitura), "%.2f", adc_reading);
+        char reading[32];
+        snprintf(reading, sizeof(reading), "%.2f", adc_reading);
 
-        char resposta[128];
-        snprintf(resposta, sizeof(resposta),
+        char response[128];
+        snprintf(response, sizeof(response),
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/plain\r\n"
             "Content-Length: %d\r\n"
             "Connection: close\r\n"
             "\r\n"
             "%s",
-            strlen(leitura), leitura);
+            strlen(reading), reading);
 
-        tcp_write(tpcb, resposta, strlen(resposta), TCP_WRITE_FLAG_COPY);
+        tcp_write(tpcb, response, strlen(response), TCP_WRITE_FLAG_COPY);
         tcp_output(tpcb);
     } else if (strstr(request, "GET /state")) { // Retorna a requisição do pino de controle
-        char leitura[32];
+        char reading[32];
         if (pump_state == 1)
-          snprintf(leitura, sizeof(leitura), "ligada!");
+          snprintf(reading, sizeof(reading), "ligada!");
         else
-          snprintf(leitura, sizeof(leitura), "desligada!");
+          snprintf(reading, sizeof(reading), "desligada!");
 
-        char resposta[128];
-        snprintf(resposta, sizeof(resposta),
+        char response[128];
+        snprintf(response, sizeof(response),
             "HTTP/1.1 200 OK\r\n"
             "Content-Type: text/plain\r\n"
             "Content-Length: %d\r\n"
             "Connection: close\r\n"
             "\r\n"
             "%s",
-            strlen(leitura), leitura);
+            strlen(reading), reading);
 
-        tcp_write(tpcb, resposta, strlen(resposta), TCP_WRITE_FLAG_COPY);
+        tcp_write(tpcb, response, strlen(response), TCP_WRITE_FLAG_COPY);
         tcp_output(tpcb);
+    } else if (strstr(request, "POST /form") != NULL) { //responde à inserção de dado via formulário
+      char *body = strstr(request, "\r\n\r\n");
+      if (body) {
+          body += 4; // pula os caracteres de nova linha
+          float value = atof(body);
+          char response_body[64];
+          snprintf(response_body, sizeof(response_body), "Recebido: %.2f", value);
+          printf("\n\nPOST");
+          printf(response_body);
+          reservoir_level = value;
+
+          char response[128];
+          snprintf(response, sizeof(response),
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: text/plain\r\n"
+              "Content-Length: %d\r\n"
+              "Connection: close\r\n"
+              "\r\n"
+              "%s", strlen(response_body), response_body);
+          tcp_write(tpcb, response, strlen(response), TCP_WRITE_FLAG_COPY);
+          tcp_output(tpcb);
+      }
     } else { //retorna a página
         user_request(&request);
 
@@ -428,22 +514,20 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                                 "flex:1 1 100%%;}"
                         "</style>"
                         "<script>"
-                          "setInterval(() => {"
-                              "fetch('/level')"
-                                  ".then(res=> res.text())"
-                                  ".then(data=>{"
-                                      "document.getElementById(\"level\").innerText=data;"
-                                  "});"
-                          "},1000);" // atualiza a cada 1 segundo
-                        "</script>"
-                        "<script>"
-                          "setInterval(() => {"
-                              "fetch('/state')"
-                                  ".then(res=> res.text())"
-                                  ".then(data=>{"
-                                      "document.getElementById(\"state\").innerText=data;"
-                                  "});"
-                          "},1000);" // atualiza a cada 1 segundo
+                            "setInterval(()=>{"
+                                "fetch('/level')"
+                                    ".then(res=>res.text())"
+                                    ".then(data=>{"
+                                        "document.getElementById(\"level\").innerText=data;"
+                                    "});"
+                            "},1000);" // atualiza a cada 1 segundo
+                            "setInterval(()=>{"
+                                "fetch('/state')"
+                                    ".then(res=>res.text())"
+                                    ".then(data=>{"
+                                        "document.getElementById(\"state\").innerText=data;"
+                                    "});"
+                            "},1000);" // atualiza a cada 1 segundo
                         "</script>"
                     "</head>"
                     "<body>"
@@ -463,9 +547,37 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                                       "<span id=\"state\">%s</span>"
                                     "</div>"
                                 "</div>"
+                                "<div class=\"card\">"
+                                    "<h4>🎚️ Alterar nível</h4>"
+                                    "<div class=\"content\">"
+                                        "<form id=\"level-mod\">"
+                                          "<input type=\"text\" id=\"level-input\" placeholder=\"2\" required />"
+                                          "<button id=\"send-btn\" type=\"button\" class=\"btn btn-p\">Enviar</button>"
+                                          "<div id=\"answer\"></div>"
+                                        "</form>"
+                                    "</div>"
+                                "</div>"
                             "</div>"
                         "</div>"
                     "</body>"
+                    "<script>"
+                      "document.getElementById(\"send-btn\").addEventListener(\"click\",(e)=>{"
+                        "e.preventDefault();"
+                        "const input=document.getElementById(\"level-input\").value;"
+                        "fetch(\"/form\",{"
+                          "method: \"POST\","
+                          "headers:{\"Content-Type\":\"text/plain\"},"
+                          "body:input"
+                        "})"
+                        ".then(res=>{res.text();})"
+                        ".then(data=>{"
+                          "document.getElementById(\"answer\").innerText=\"enviado\""
+                        "})"
+                        ".catch(err=>{"
+                          "console.error(\"Error! \"+err)"
+                        "});"
+                      "});"
+                    "</script>"
                 "</html>", adc_reading, state);
 
         tcp_write(tpcb, html, strlen(html), TCP_WRITE_FLAG_COPY);
@@ -481,4 +593,99 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
     pbuf_free(p);
 
     return ERR_OK;
+}
+
+void config_pio(pio* pio){
+    pio->address = pio0;
+    if (!set_sys_clock_khz(128000, false))
+        printf("clock errado!");
+    pio->offset = pio_add_program(pio->address, &pio_review_program);
+    pio->state_machine = pio_claim_unused_sm(pio->address, true);
+
+    pio_review_program_init(pio->address, pio->state_machine, pio->offset, pio->pin);
+}
+
+uint32_t rgb_matrix(rgb color){
+    unsigned char r, g, b;
+    r = color.red* 255;
+    g = color.green * 255;
+    b = color.blue * 255;
+    return (g << 24) | (r << 16) | (b << 8);
+}
+
+//desenha na matriz os padrões
+void draw_new(sketch sketch, uint32_t led_cfg, pio pio, const uint8_t vector_size){
+
+    for(int16_t i = 0; i < vector_size; i++){
+        if (sketch.figure[i] == 1)
+            led_cfg = rgb_matrix(sketch.main_color);
+        else
+            led_cfg = rgb_matrix(sketch.background_color);
+        pio_sm_put_blocking(pio.address, pio.state_machine, led_cfg);
+    }
+
+};
+
+//tarefa relativa ao controle da matriz de LEDs
+void vMatrixTask(){
+
+    pio my_pio = {
+        .pin = 7,
+        .address = 0,
+        .offset = 0,
+        .state_machine = 0
+    };
+
+    config_pio(&my_pio);
+
+    sketch sketch1 = {
+        .background_color = {
+            .blue = 0.0, .green = 0.0, .red = 0.0
+        },
+        .index = 0,
+        .main_color = {
+            .blue = 0.0, .green = 0.01, .red = 0.01
+        },
+        .figure = {
+            0, 1, 0, 0, 0,
+            0, 0, 0, 1, 0,
+            0, 1, 1, 1, 0,
+            0, 1, 0, 1, 0,
+            0, 1, 0, 1, 0
+        } 
+    };
+
+    sketch sketch2 = {
+        .background_color = {
+            .blue = 0.0, .green = 0.0, .red = 0.0
+        },
+        .index = 0,
+        .main_color = {
+            .blue = 0.0, .green = 0.00, .red = 0.01
+        },
+        .figure = {
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0 
+        } 
+    };
+
+
+    while(true){
+        //observa o estado atual e desenha na matriz de acordo
+        switch(reservoir_level){
+            case 4:
+                sketch1.main_color.red = 0.00;
+                draw_new(sketch1, 0, my_pio, 25);
+                break;
+            default:
+                sketch2.main_color.red = 0.00;
+                draw_new(sketch2, 0, my_pio, 25);
+                break;            
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
 }
