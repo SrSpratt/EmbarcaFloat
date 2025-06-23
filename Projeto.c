@@ -346,25 +346,25 @@ void vBuzzerTask(){
     bool alerta_desligado_concluido = false;
 
     while(true){
-      // if(pump_state && !alerta_ligado_concluido){
-      //   pwm_set_gpio_level(Buzzer, 32768);          //três bips para indicar que a bomba foi ligada
-      //   vTaskDelay(pdMS_TO_TICKS(700));  
-      //   pwm_set_gpio_level(Buzzer, 0); 
-      //   vTaskDelay(pdMS_TO_TICKS(200));          
-      //   pwm_set_gpio_level(Buzzer, 32768);          
-      //   vTaskDelay(pdMS_TO_TICKS(700));             
-      //   pwm_set_gpio_level(Buzzer, 0);              
-      //   alerta_ligado_concluido = true;
-      //   alerta_desligado_concluido = false;
-      // }else if(!pump_state && !alerta_desligado_concluido){
-      //   pwm_set_gpio_level(Buzzer, 32768);        //um bip para indicar que a bomba foi desligada  
-      //   vTaskDelay(pdMS_TO_TICKS(700));             
-      //   pwm_set_gpio_level(Buzzer, 0);              
-      //   alerta_ligado_concluido = true;
-      //   alerta_desligado_concluido = false;
-      //   alerta_ligado_concluido = false;
-      //   alerta_desligado_concluido = true;
-      // }
+      if(pump_state && !alerta_ligado_concluido){
+        pwm_set_gpio_level(Buzzer, 32768);          //três bips para indicar que a bomba foi ligada
+        vTaskDelay(pdMS_TO_TICKS(700));  
+        pwm_set_gpio_level(Buzzer, 0); 
+        vTaskDelay(pdMS_TO_TICKS(200));          
+        pwm_set_gpio_level(Buzzer, 32768);          
+        vTaskDelay(pdMS_TO_TICKS(700));             
+        pwm_set_gpio_level(Buzzer, 0);              
+        alerta_ligado_concluido = true;
+        alerta_desligado_concluido = false;
+      }else if(!pump_state && !alerta_desligado_concluido){
+        pwm_set_gpio_level(Buzzer, 32768);        //um bip para indicar que a bomba foi desligada  
+        vTaskDelay(pdMS_TO_TICKS(700));             
+        pwm_set_gpio_level(Buzzer, 0);              
+        alerta_ligado_concluido = true;
+        alerta_desligado_concluido = false;
+        alerta_ligado_concluido = false;
+        alerta_desligado_concluido = true;
+      }
       vTaskDelay(pdMS_TO_TICKS(500));    
     }
 };
