@@ -18,8 +18,8 @@
 #include "hardware/pwm.h"
 
 // Credenciais WIFI - Tome cuidado se publicar no github!
-#define WIFI_SSID "AndroidAP"
-#define WIFI_PASSWORD "andressa123"
+#define WIFI_SSID "TEMPLATE"
+#define WIFI_PASSWORD "TEMPLATE"
 
 #define LED_PIN CYW43_WL_GPIO_LED_PIN 
 #define I2C_PORT i2c1
@@ -155,13 +155,16 @@ void vADCReadTask(){
     float media = soma / 16.0f;
     adc_reading = (media * 100) / 4095;
     if (adc_reading < reservoir_min) {
-      gpio_put(CONTROL_PIN, 1);
-    } else {
-      if(adc_reading > reservoir_max)
-        gpio_put(CONTROL_PIN, 0);
+      if(!pump_state)
+        set_pump_state();
+      pump_state=true;  
+    } else if(adc_reading > reservoir_max) {
+      if(pump_state)
+        set_pump_state();
+      pump_state=false;
     }
-    pump_state = gpio_get(CONTROL_PIN);
     vTaskDelay(pdMS_TO_TICKS(100));
+
   }
 }
 
