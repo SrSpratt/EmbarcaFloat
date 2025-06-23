@@ -64,13 +64,13 @@ enum wifi_state { //estrutura que representa o estado da conexão wi-fi
 
 volatile float adc_reading = 0; //variável que armazena a leitura do potenciômetro
 volatile int pump_state = 0; // variável que armazena o estado do pino de controle
-volatile float reservoir_max = 1; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
-volatile float reservoir_min = 10; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile float reservoir_max = 10; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile float reservoir_min = 1; //variável que armazena o nível do reservatório (para acionamento da bomba etc.)
 volatile uint8_t wifi_connected = WIFI_CONNECTING; // Variável para verificar se o Wi-Fi está conectado
 ssd1306_t ssd; // Inicia a estrutura do display
 
 // WIFI
-
+ 
 // Função de callback ao aceitar conexões TCP
 static err_t tcp_server_accept(void *arg, struct tcp_pcb *newpcb, err_t err);
 
@@ -141,14 +141,15 @@ void vADCReadTask(){
       sleep_ms(1);
     }
     float media = soma / 16.0f;
-    adc_reading = (media * 3.3) / 4095;
-    if (adc_reading < 2){
+    adc_reading = (media * 100) / 4095;
+    if (adc_reading < reservoir_min) {
       gpio_put(CONTROL_PIN, 1);
     } else {
-      gpio_put(CONTROL_PIN, 0);
+      if(adc_reading > reservoir_max)
+        gpio_put(CONTROL_PIN, 0);
     }
     pump_state = gpio_get(CONTROL_PIN);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -156,7 +157,7 @@ void vDisplayTask(){
 
   i2c_init(I2C_PORT, 400 * 1000);
   gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
-  gpio_set_function(I2C_SCL, GPIO_FUNC_I2C); 
+  gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
   gpio_pull_up(I2C_SDA); 
   gpio_pull_up(I2C_SCL); 
   
@@ -170,7 +171,7 @@ void vDisplayTask(){
   bool cor = true;
 
   while(true){
-    sprintf(str, "lvl: %.0f", (100*adc_reading/3.3));  // Converte o float em string
+    sprintf(str, "lvl: %.0f%%", adc_reading);  // Converte o float em string
     
     ssd1306_fill(&ssd, !cor); // Limpa o display
     ssd1306_rect(&ssd, 3, 3, 122, 60, cor, !cor); // Desenha um retângulo
@@ -237,10 +238,14 @@ void vDisplayTask(){
     ssd1306_line(&ssd, 46, 25, 48, 25, cor); // Desenha uma linha
 
     // Lógica da animação do nível da agua basedo no ADC
-    ssd1306_rect(&ssd, 26+(30-(30*adc_reading/3.3)), 9, 41, 30-(30-(30*adc_reading/3.3)), cor, cor); // Desenha um retângulo
-    ssd1306_draw_string(&ssd, "max: 80%", 54, 20); // Desenha uma string
-    ssd1306_draw_string(&ssd, "min: 20%", 54, 49); // Desenha uma string
+    ssd1306_rect(&ssd, 26+(30-(30*adc_reading/100)), 9, 41, 30-(30-(30*adc_reading/100)), cor, cor); // Desenha um retângulo
+    // Limpa a parte da tela em que aparece a porcentagem atual de agua, isso evita que mudanças entre números com 3 caracteres para 2 caracteres deixem um "ghost" na tela
+    ssd1306_draw_string(&ssd, "    ", 54, 35);
     ssd1306_draw_string(&ssd, str, 54, 35); // Desenha uma string
+    sprintf(str, "min: %.0f%%", reservoir_min); // Converte o float em string
+    ssd1306_draw_string(&ssd, str, 54, 49); // Desenha uma string
+    sprintf(str, "max: %.0f%%", reservoir_max); // Converte o float em string
+    ssd1306_draw_string(&ssd, str, 54, 20); // Desenha uma string
 
     ssd1306_send_data(&ssd); // Atualiza o display
     vTaskDelay(pdMS_TO_TICKS(70));
