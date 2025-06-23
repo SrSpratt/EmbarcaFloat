@@ -346,25 +346,25 @@ void vBuzzerTask(){
     bool alerta_desligado_concluido = false;
 
     while(true){
-      if(pump_state && !alerta_ligado_concluido){
-        pwm_set_gpio_level(Buzzer, 32768);          //três bips para indicar que a bomba foi ligada
-        vTaskDelay(pdMS_TO_TICKS(700));  
-        pwm_set_gpio_level(Buzzer, 0); 
-        vTaskDelay(pdMS_TO_TICKS(200));          
-        pwm_set_gpio_level(Buzzer, 32768);          
-        vTaskDelay(pdMS_TO_TICKS(700));             
-        pwm_set_gpio_level(Buzzer, 0);              
-        alerta_ligado_concluido = true;
-        alerta_desligado_concluido = false;
-      }else if(!pump_state && !alerta_desligado_concluido){
-        pwm_set_gpio_level(Buzzer, 32768);        //um bip para indicar que a bomba foi desligada  
-        vTaskDelay(pdMS_TO_TICKS(700));             
-        pwm_set_gpio_level(Buzzer, 0);              
-        alerta_ligado_concluido = true;
-        alerta_desligado_concluido = false;
-        alerta_ligado_concluido = false;
-        alerta_desligado_concluido = true;
-      }
+      // if(pump_state && !alerta_ligado_concluido){
+      //   pwm_set_gpio_level(Buzzer, 32768);          //três bips para indicar que a bomba foi ligada
+      //   vTaskDelay(pdMS_TO_TICKS(700));  
+      //   pwm_set_gpio_level(Buzzer, 0); 
+      //   vTaskDelay(pdMS_TO_TICKS(200));          
+      //   pwm_set_gpio_level(Buzzer, 32768);          
+      //   vTaskDelay(pdMS_TO_TICKS(700));             
+      //   pwm_set_gpio_level(Buzzer, 0);              
+      //   alerta_ligado_concluido = true;
+      //   alerta_desligado_concluido = false;
+      // }else if(!pump_state && !alerta_desligado_concluido){
+      //   pwm_set_gpio_level(Buzzer, 32768);        //um bip para indicar que a bomba foi desligada  
+      //   vTaskDelay(pdMS_TO_TICKS(700));             
+      //   pwm_set_gpio_level(Buzzer, 0);              
+      //   alerta_ligado_concluido = true;
+      //   alerta_desligado_concluido = false;
+      //   alerta_ligado_concluido = false;
+      //   alerta_desligado_concluido = true;
+      // }
       vTaskDelay(pdMS_TO_TICKS(500));    
     }
 };
@@ -526,7 +526,8 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                                 "margin-bottom:20px;}"
                             ".content{display:flex;"
                                 "flex-direction:row;"
-                                "flex-wrap:wrap;}"
+                                "flex-wrap:wrap;"
+                                "justify-self:center;}"
                             ".btn{"
                                 "display:inline-flex;"
                                 "align-items:center;"
@@ -543,6 +544,18 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                             ".btn:hover{"
                                 "opacity:0.8;"
                                 "transform:translateY(-2px);}"
+                            ".classifier{"
+                                "display:flex;"
+                                "gap:15px;"
+                            "}"
+                            ".card-label{"
+                                "text-align:center;"
+                                "display: flex;"
+                                "font-size: 22px"
+                                "margin:0px 0 15px 0;"
+                                "font-weight:600;"
+                                "justify-content:center;"
+                            "}"
                             ".btn-p{"
                                 "background:#0d6efd;}"
                             ".btn-d{"
@@ -563,6 +576,11 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                             "h1{"
                                 "color:#212529;"
                                 "margin-bottom:1.5rem;}"
+                            "input{"
+                                "border-radius:10px;"
+                                "display: flex;"
+                                "margin:5px 0;"
+                            "}"
                             ".sensor{"
                                 "font-size:12px;"
                                 "color:#495057;"
@@ -594,20 +612,22 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                         "<div class=\"container\">"
                             "<div class=\"office section\">"
                                 "<h4>Projeto</h4>"
-                                "<div class=\"card\">"
-                                    "<h4>💧Nível de água</h4>"
-                                    "<div class=\"content\">"
-                                      "<h4>Nível medido: <span id=\"level\">%.2f</span> V</h4>"
-                                    "</div>"
+                                "<div class=\"classifier\">"
+                                  "<div class=\"card\">"
+                                      "<span class=\"card-label\">💧Nível de água</span>"
+                                      "<div class=\"content\">"
+                                        "<span id=\"level\">%.2f</span><span>%%</span>"
+                                      "</div>"
+                                  "</div>"
+                                  "<div class=\"card\">"
+                                      "<span class=\"card-label\">🚿Estado da bomba</span>"
+                                      "<div class=\"content\">"
+                                        "<span id=\"state\">%s</span>"
+                                      "</div>"
+                                  "</div>"
                                 "</div>"
                                 "<div class=\"card\">"
-                                    "<h4>🚿Estado da bomba</h4>"
-                                    "<div class=\"content\">"
-                                      "<span id=\"state\">%s</span>"
-                                    "</div>"
-                                "</div>"
-                                "<div class=\"card\">"
-                                    "<h4>🎚️ Alterar nível</h4>"
+                                    "<span class=\"card-label\">🎚️ Alterar nível</span>"
                                     "<div class=\"content\">"
                                         "<form id=\"level-mod\">"
                                           "<label for=\"level-min\">Min:</label>"
