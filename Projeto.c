@@ -71,7 +71,7 @@ enum wifi_state
 
 volatile float adc_reading = 0;                    // variável que armazena a leitura do potenciômetro
 volatile int pump_state = 0;                       // variável que armazena o estado do pino de controle
-volatile float reservoir_max = 10;                 // variável que armazena o nível do reservatório (para acionamento da bomba etc.)
+volatile float reservoir_max = 90;                 // variável que armazena o nível do reservatório (para acionamento da bomba etc.)
 volatile float reservoir_min = 1;                  // variável que armazena o nível do reservatório (para acionamento da bomba etc.)
 volatile uint8_t wifi_connected = WIFI_CONNECTING; // Variável para verificar se o Wi-Fi está conectado
 ssd1306_t ssd;                                     // Inicia a estrutura do display
@@ -127,11 +127,11 @@ int main()
   gpio_set_dir(CONTROL_PIN, GPIO_OUT);
   // gpio_pull_up(CONTROL_PIN);
 
-  xTaskCreate(vADCReadTask, "ADC Read Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
-  xTaskCreate(vDisplayTask, "Display Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
-  xTaskCreate(vMatrixTask, "Matrix Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
-  xTaskCreate(vConnectTask, "Connect Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
-  xTaskCreate(vBuzzerTask, "Buzzer Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vADCReadTask, "ADC Read Task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vDisplayTask, "Display Task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vMatrixTask, "Matrix Task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vConnectTask, "Connect Task", 1024, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vBuzzerTask, "Buzzer Task", 1024, NULL, tskIDLE_PRIORITY, NULL);
   vTaskStartScheduler();
 
   panic_unsupported();
@@ -147,7 +147,6 @@ void set_pump_state()
 
 void vADCReadTask()
 {
-
   float tensao;
 
   adc_select_input(2); // Seleciona o ADC para eixo X. O pino 28 como entrada analógica
@@ -161,20 +160,22 @@ void vADCReadTask()
       vTaskDelay(pdMS_TO_TICKS(1)); // Espera 100 milisegundos antes de tentar novamente
     }
     float media = soma / 16.0f;
-    if(media - 680 > 1100) media = 1100;
-    printf("%.0f\n", media);
-    adc_reading = ((media - 680) * 100) / 1100;
+    if (media < 890) media = 890;
+    if (media > 1480) media = 1480;
+    adc_reading = ((media - 890) * 100) / 590;
     if (adc_reading < reservoir_min)
     {
       if (!pump_state)
         set_pump_state();
       pump_state = true;
+      gpio_put(11, 1); // Liga a bomba
     }
     else if (adc_reading > reservoir_max)
     {
       if (pump_state)
         set_pump_state();
       pump_state = false;
+      gpio_put(11, 0); // Desliga a bomba
     }
     vTaskDelay(pdMS_TO_TICKS(100));
   }
@@ -494,10 +495,10 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
           tcp_output(tpcb);
       }
     } else { //retorna a página
-        user_request(&request);
+        // user_request(&request);
 
         // Cria a resposta HTML
-        char html[3072];
+        char html[3116];
 
 
         char state[11];
@@ -625,7 +626,7 @@ static err_t tcp_server_recv(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, er
                                     ".then(data=>{"
                                         "document.getElementById(\"state\").innerText=data;"
                                     "});"
-                            "},1000);" // atualiza a cada 1 segundo
+                            "},300);" // atualiza a cada 1 segundo
                         "</script>"
                     "</head>"
                     "<body>"
