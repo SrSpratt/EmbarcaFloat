@@ -15,9 +15,11 @@
 #include "lwip/pbuf.h"           // Lightweight IP stack - manipulação de buffers de pacotes de rede
 #include "lwip/tcp.h"            // Lightweight IP stack - fornece funções e estruturas para trabalhar com o protocolo TCP
 #include "lwip/netif.h"          // Lightweight IP stack - fornece funções e estruturas para trabalhar com interfaces de rede (netif)
+#include "hardware/pwm.h"
+
 // Credenciais WIFI - Tome cuidado se publicar no github!
-#define WIFI_SSID "TEMPLATE"
-#define WIFI_PASSWORD "TEMPLATE"
+#define WIFI_SSID "AndroidAP"
+#define WIFI_PASSWORD "andressa123"
 
 #define LED_PIN CYW43_WL_GPIO_LED_PIN 
 #define I2C_PORT i2c1
@@ -26,6 +28,7 @@
 #define endereco 0x3C
 #define ADC_PIN 28  // GPIO para a leitura
 #define CONTROL_PIN 9 // GPIO para o controle da bomba
+#define Buzzer 21       //Pino do Buzzer
 
 //Trecho para modo BOOTSEL com botão B
 #include "pico/bootrom.h"
@@ -92,6 +95,8 @@ void vADCReadTask();
 void vDisplayTask();
 void vConnectTask();
 void vMatrixTask();
+void vBuzzerTask();
+
 //FIM TASKS
 
 int main()
@@ -122,11 +127,18 @@ int main()
   xTaskCreate(vDisplayTask, "Display Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   xTaskCreate(vMatrixTask, "Matrix Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   xTaskCreate(vConnectTask, "Connect Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
+  xTaskCreate(vBuzzerTask, "Buzzer Task", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY, NULL);
   vTaskStartScheduler();
 
   panic_unsupported();
 }
 
+//Função que gera pulso para ativar ou desativar bomba
+void set_pump_state(){
+  gpio_put(CONTROL_PIN, 1);
+  sleep_ms(300);
+  gpio_put(CONTROL_PIN, 0);
+};
 
 void vADCReadTask(){
 
@@ -142,12 +154,16 @@ void vADCReadTask(){
     }
     float media = soma / 16.0f;
     adc_reading = (media * 3.3) / 4095;
+
     if (adc_reading < 2){
-      gpio_put(CONTROL_PIN, 1);
+      if(!pump_state)
+        set_pump_state();
+      pump_state=true;  
     } else {
-      gpio_put(CONTROL_PIN, 0);
+      if(pump_state)
+        set_pump_state();
+      pump_state=false;
     }
-    pump_state = gpio_get(CONTROL_PIN);
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
@@ -313,7 +329,41 @@ void vConnectTask(){
   cyw43_arch_deinit();
 }
 
+void vBuzzerTask(){
+    uint slice;
+    gpio_set_function(Buzzer, GPIO_FUNC_PWM); //Configura pino do led como pwm
+    slice = pwm_gpio_to_slice_num(Buzzer); //Adiquire o slice do pino
+    pwm_config config = pwm_get_default_config();
+    pwm_config_set_clkdiv(&config, clock_get_hz(clk_sys) / (4400 * 4096));
+    pwm_init(slice, &config, true);
+    pwm_set_gpio_level(Buzzer, 0); //Determina com o level desejado
 
+    bool alerta_ligado_concluido = false;
+    bool alerta_desligado_concluido = false;
+
+    while(true){
+      if(pump_state && !alerta_ligado_concluido){
+        pwm_set_gpio_level(Buzzer, 32768);          //três bips para indicar que a bomba foi ligada
+        vTaskDelay(pdMS_TO_TICKS(700));  
+        pwm_set_gpio_level(Buzzer, 0); 
+        vTaskDelay(pdMS_TO_TICKS(200));          
+        pwm_set_gpio_level(Buzzer, 32768);          
+        vTaskDelay(pdMS_TO_TICKS(700));             
+        pwm_set_gpio_level(Buzzer, 0);              
+        alerta_ligado_concluido = true;
+        alerta_desligado_concluido = false;
+      }else if(!pump_state && !alerta_desligado_concluido){
+        pwm_set_gpio_level(Buzzer, 32768);        //um bip para indicar que a bomba foi desligada  
+        vTaskDelay(pdMS_TO_TICKS(700));             
+        pwm_set_gpio_level(Buzzer, 0);              
+        alerta_ligado_concluido = true;
+        alerta_desligado_concluido = false;
+        alerta_ligado_concluido = false;
+        alerta_desligado_concluido = true;
+      }
+      vTaskDelay(pdMS_TO_TICKS(500));    
+    }
+};
 // WIFI
 
 // Tratamento do request do usuário - digite aqui

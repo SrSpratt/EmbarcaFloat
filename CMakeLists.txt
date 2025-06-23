@@ -54,6 +54,7 @@ target_link_libraries(${PROJECT_NAME}
         FreeRTOS-Kernel 
         FreeRTOS-Kernel-Heap4
         pico_cyw43_arch_lwip_threadsafe_background
+        hardware_pwm
         )
 
 pico_generate_pio_header(${PROJECT_NAME} ${CMAKE_SOURCE_DIR}/lib/pioconfig.pio)
